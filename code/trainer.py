@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss, MSELoss
+from torch.utils.data import RandomSampler, DataLoader
 from tqdm import tqdm, trange
 import io
 import os
@@ -13,7 +14,10 @@ import shutil
 import pickle
 import config as MY_CONFIG
 import pandas as pd
-from models import *
+# from models import *
+from transformers import BertModel, BertConfig
+import utils
+from model import *
 from utils import *
 from datasets import RankingLossDataset as DATASET
 
@@ -36,8 +40,9 @@ class Trainer:
 
         self.model_save_name = "LS_Score"
 
-        self.device = torch.device("cuda" if is_cuda else "cpu")
-        self.bert_model.to(self.device)
+        # self.device = torch.device("cuda" if is_cuda else "cpu")
+        self.devi = "cpu"
+        self.bert_model.to(self.devi)
 
         self.model_save_dir = args.output_dir + \
             "/model_save_{}".format(self.dataset_name)
@@ -70,7 +75,16 @@ class Trainer:
 
     def load_model(self, dir_path,  load_pretrained_model, load_base_bert):
         if load_base_bert:
-            self.bert_model = MODEL.from_pretrained(self.pretrained_model_dir)
+
+            self.tokenizer = BertTokenizer.from_pretrained(
+            self.pretrained_model_dir, do_lower_case=True)
+            self.config = BertConfig.from_pretrained(self.pretrained_model_dir)
+            self.max_seq_length = 512
+            self.config.hidden_dropout_prob = 0.4
+            self.bert_model = BertForLS_Score(config=self.config,
+                                            is_cuda=True)
+
+            # self.bert_model = BertModel.from_pretrained(self.pretrained_model_dir)  # sb: changed MODEL to BertModel
         else:
             checkpoint_dir = self.find_most_recent_state_dict(
                 dir_path, load_pretrained_model)
@@ -81,7 +95,7 @@ class Trainer:
                 self.bert_model.load_state_dict(
                     checkpoint["model_state_dict"], strict=False)
         torch.cuda.empty_cache()
-        self.bert_model.to(self.device)
+        self.bert_model.to(self.devi)
 
     def train(self, epoch):
         torch.cuda.empty_cache()
@@ -129,7 +143,7 @@ class Trainer:
 
         for i, batch in data_iter:
 
-            score, loss = self.bert_model.forward(batch)
+            score, loss = self.bert_model.list_forward(batch)
             score = score.detach().cpu().numpy().reshape(-1).tolist()
 
             mmax = max(score)
@@ -220,7 +234,9 @@ class Trainer:
         dic_lis = sorted(dic_lis, key=lambda k: int(k.split(".")[-1]))
         return dir_path + "/" + dic_lis[-1]
 
-    def save_state_dict(self, epoch, state_dict_dir, file_path=self.model_save_name+".model"):
+    def save_state_dict(self, epoch, state_dict_dir, file_path=None):
+        if file_path is None:
+            file_path = self.model_save_name+".model"
         if not os.path.exists(state_dict_dir):
             os.mkdir(state_dict_dir)
         save_path = state_dict_dir + "/" + \
@@ -228,8 +244,13 @@ class Trainer:
         self.bert_model.to("cpu")
         torch.save(
             {"model_state_dict": self.bert_model.state_dict()}, save_path)
-        self.bert_model.to(self.device)
+        self.bert_model.to(self.devi)
 
+def init_Trainer(args):
+    trainer_instance = Trainer(args, args.pretrained_model_dir,
+                        MY_CONFIG.dataset_dir_dict, is_cuda=True)
+    dynamic_lr = args.lr
+    return trainer_instance, dynamic_lr
 
 def main():
 
@@ -290,16 +311,11 @@ def main():
     if args.device_num != '-1':
         os.environ['CUDA_VISIBLE_DEVICES'] = args.device_num
 
-    def init_Trainer():
-        trainer = Trainer(args, args.pretrained_model_dir,
-                          MY_CONFIG.dataset_dir_dict, is_cuda=True)
-        dynamic_lr = args.lr
-        return trainer, dynamic_lr
 
     start_epoch = 0  # from scratch
     train_epoches = args.num_train_epochs
 
-    Trainer, dynamic_lr = init_Trainer()
+    Trainer, dynamic_lr = init_Trainer(args)
 
     threshold = 999
     patient = 3

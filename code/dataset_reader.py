@@ -4,6 +4,30 @@ import os
 import pickle
 from nltk.translate.bleu_score import corpus_bleu
 import time
+import pandas as pd
+import numpy as np
+
+def read_newsroom_human_score(human_score_file):
+    
+    
+
+    df = pd.read_csv(human_score_file)
+
+    article_ids = df['ArticleID'].unique()
+    
+    human_scores_2 = {}
+    summaries = {}
+
+    for aid in article_ids:
+        sub = df[df['ArticleID'] == aid]
+        values = sub[['CoherenceRating', 'FluencyRating', 'InformativenessRating', 'RelevanceRating']].values
+
+        human_scores_2[aid] = values
+        summaries[aid] = sub['SystemSummary'].values[0]
+        
+    # summaries = None
+    
+    return human_scores_2, summaries, None
 
 
 class Reader:
@@ -106,10 +130,10 @@ class CNNDM_Reader(Reader):
         human_score_file = self.dataset_dir + 'human_score.jsonl'
         articles_file = self.dataset_dir + 'articles.jsonl'
 
-        human_scores = self._read_human_score(human_score_file)
-        summaries, references = self._read_summaries_and_reference(
+        human_scores = self.read_human_score(human_score_file)
+        summaries, references = self.read_summaries_and_reference(
             summaries_file, human_scores)
-        articles = self._read_articles(articles_file, human_scores)
+        articles = self.read_articles(articles_file, human_scores)
 
         data = {'human_scores': human_scores,
                 'summaries': summaries,
@@ -137,10 +161,20 @@ class Newsroom_Reader(Reader):
 
         human_scores_different_prompt = {}
         for prompt in prompt_list:
-            human_scores_different_prompt[prompt] = self.__get_human_scores_prompt(
+            human_scores_different_prompt[prompt] = self._get_human_scores_prompt(
                 human_scores, prompt=prompt)
         return human_scores_different_prompt
 
+    # def read_articles(self, articles_file, human_scores):
+    #     if os.path.exists(articles_file):
+    #         with open(articles_file, 'rb') as handle:
+    #             _articles = pickle.load(handle)
+
+    #     a_prompt = list(human_scores.keys())[0]
+    #     human_scores = human_scores[a_prompt]
+    #     articles = {key: art for key, art in _articles.items()
+    #                 if key in human_scores}
+    #     return articles
     def read_articles(self, articles_file, human_scores):
         if os.path.exists(articles_file):
             with open(articles_file, 'rb') as handle:
@@ -149,8 +183,9 @@ class Newsroom_Reader(Reader):
         a_prompt = list(human_scores.keys())[0]
         human_scores = human_scores[a_prompt]
         articles = {key: art for key, art in _articles.items()
-                    if key in human_scores}
+                    if int(key) in human_scores.keys()}
         return articles
+
 
     def read_summaries_and_reference(self, references_file, human_score_file, human_scores):
 
@@ -160,21 +195,23 @@ class Newsroom_Reader(Reader):
         a_prompt = list(human_scores.keys())[0]
         human_scores = human_scores[a_prompt]
         _, _summaries, _ = read_newsroom_human_score(human_score_file)
+        human_scores = self.read_human_score(human_score_file)
         summaries = {}
-        for id_key in _summaries:
+        for id_key in _summaries:  # filter out summaries that are not in human_scores, _summaries[id_key]
             if id_key in human_scores:
                 summaries[id_key] = _summaries[id_key]
         return summaries, references
 
     def read_data(self):
         human_score_file = self.dataset_dir + 'human-eval.csv'
-        references_file = self.dataset_dir + "references_of_human_scores"
+        # references_file = self.dataset_dir + "references_of_human_scores"
+        references_file = self.dataset_dir + "references_with_id"
         articles_file = self.dataset_dir + 'articles_with_id'
 
-        human_scores = self._read_human_score(human_score_file)
-        summaries, references = self._read_summaries_and_reference(
+        human_scores = self.read_human_score(human_score_file)
+        summaries, references = self.read_summaries_and_reference(
             references_file, human_score_file, human_scores)
-        articles = self._read_articles(articles_file, human_scores)
+        articles = self.read_articles(articles_file, human_scores)
 
         data = {'human_scores': human_scores,
                 'summaries': summaries,

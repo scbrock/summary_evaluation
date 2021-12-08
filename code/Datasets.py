@@ -11,10 +11,17 @@ import utils
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import difflib
+import os
+import pickle
+import random
+import string
 from dataset_reader import CNNDM_Reader, Newsroom_Reader
+# import nltk
+# nltk.download('punkt')
 
 
 def read_dataset(dataset_name, dataset_dir):
+    from dataset_reader import CNNDM_Reader, Newsroom_Reader
     def filter_test_data(human_score, articles, references):
         def func(x):
             return {k: v for k, v in x.items() if k not in human_score}
@@ -23,12 +30,13 @@ def read_dataset(dataset_name, dataset_dir):
         if references != None:
             references = func(references)
         return articles, references
+
     if dataset_name == "cnndm":
-        data = CNNDM_Reader.read_data()
-    elif dataset_name == "newsroom":
-        data = Newsroom_Reader.read_data()
+        data = CNNDM_Reader(dataset_dir['newsroom']).read_data()
+    else:
+        data = Newsroom_Reader(dataset_dir['newsroom']).read_data()
     human_scores, articles, references = data["human_scores"], data["articles"], data["references"]
-    articles, references = filter_test_data(human_scores, articles, references)
+    # articles, references = filter_test_data(human_scores, articles, references)  # no filtering out test data for now (not sure what test data is used for)
     return articles, references
 
 
@@ -38,8 +46,12 @@ class RankingLossDataset(Dataset):
         self.articles, self.references = read_dataset(
             dataset_name, dataset_dir)
 
+        # print('Here')
+
         self.neg_func_list = [self.delete_words,
                               self.disorder_words, self.add_sentences]
+
+        # print('Here')
 
         directory = os.path.dirname(os.path.abspath(__file__))
         self.cached_file = os.path.join(
@@ -236,17 +248,24 @@ class RankingLossDataset(Dataset):
 
         word_list = sent.split(' ')
         num_words_to_disorder = int(len(word_list)*probability)
+        if num_words_to_disorder < 1: num_words_to_disorder = 1
 
         def get_random_list(word_list, num_words):
             index_list = list(range(0, len(word_list)))
 
             while(1):
+
                 a_index_list = random.sample(index_list, num_words)
+                if len(word_list) < 2:
+                    break
                 if any([word_list[a] not in punc for a in a_index_list]):
                     break
             while(1):
+
                 b_index_list = random.sample(index_list, num_words)
                 if any([word_list[b] not in punc for b in b_index_list]):
+                    break
+                if len(word_list) < 2:
                     break
 
             return a_index_list, b_index_list
