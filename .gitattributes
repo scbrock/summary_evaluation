@@ -1,0 +1,6 @@
+data filter=lfs diff=lfs merge=lfs -text
+*.story filter=lfs diff=lfs merge=lfs -text
+*_id filter=lfs diff=lfs merge=lfs -text
+*.csv filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.tgz filter=lfs diff=lfs merge=lfs -text
